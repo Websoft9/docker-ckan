@@ -1,6 +1,5 @@
-## About
+## Ckan
 
-This repository is forked from ONLYOFFICE/Docker-CommunityServer, we have the following modifications are provided
+## 安装
 
-* replace README.md
-* add README-zh.md, CHANGELOG.md, Note.md, License.md, docker-compose-production.yml, .github folder
+官方提供的是基于 build 的编排文件，目前仅合并，没有测试，有待进一步研究.

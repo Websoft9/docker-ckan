@@ -1,112 +1,81 @@
-# this file from docker-compose.workspace, delete mail-server
-# default MySQL root password is 123456
+# docker-compose build && docker-compose up -d
+# If "docker-compose logs ckan" shows DB not ready, run "docker-compose restart ckan" a few times.
+# https://github.com/ckan/ckan/blob/master/contrib/docker/docker-compose.yml
 
+version: "3"
 
-version: '3.8'
-services:
-  onlyoffice-mysql-server:
-    container_name: ${APP_CONTAINER_NAME}-mysql
-    image: mysql:${DB_MYSQL_VERSION}
-    environment:
-     - MYSQL_ROOT_PASSWORD=${DB_MYSQL_PASSWORD}
-    stdin_open: true
-    user: root
-    tty: true
-    restart: always
-    volumes:
-     - ${VOLUMES_PATH_PREFIX}/config/mysql/conf.d:/etc/mysql/conf.d
-     - ${VOLUMES_PATH_PREFIX}/config/mysql/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
-     - ${VOLUMES_PATH_PREFIX}/mysql_data:/var/lib/mysql
-     
-  onlyoffice-community-server:
-    container_name: ${APP_CONTAINER_NAME}
-    image: onlyoffice/communityserver:11.0.0.1458
-    depends_on:
-     - onlyoffice-mysql-server
-     - onlyoffice-document-server
-    environment:
-     - ONLYOFFICE_CORE_MACHINEKEY=core_secret
-     - CONTROL_PANEL_PORT_80_TCP=80
-     - CONTROL_PANEL_PORT_80_TCP_ADDR=onlyoffice-control-panel
-     - DOCUMENT_SERVER_PORT_80_TCP_ADDR=onlyoffice-document-server
-     - DOCUMENT_SERVER_JWT_ENABLED=true
-     - DOCUMENT_SERVER_JWT_SECRET=jwt_secret
-     - DOCUMENT_SERVER_JWT_HEADER=AuthorizationJwt
-     - MYSQL_SERVER_ROOT_PASSWORD=123456
-     - MYSQL_SERVER_DB_NAME=onlyoffice
-     - MYSQL_SERVER_HOST=onlyoffice-mysql-server
-     - MYSQL_SERVER_USER=onlyoffice
-     - MYSQL_SERVER_PASS=123456
-    ports:
-     - '${APP_PORT}:80'
-     - '443'
-     - '5222:5222'
-    stdin_open: true
-    tty: true
-    restart: always
-    privileged: true
-    volumes:
-     - ${VOLUMES_PATH_PREFIX}/community_data:/var/www/onlyoffice/Data
-     - ${VOLUMES_PATH_PREFIX}/community_log:/var/log/onlyoffice
-     - ${VOLUMES_PATH_PREFIX}/community_letsencrypt:/etc/letsencrypt
-     - ${VOLUMES_PATH_PREFIX}/document_data:/var/www/onlyoffice/DocumentServerData
-     - /sys/fs/cgroup:/sys/fs/cgroup:ro
-     - ${VOLUMES_PATH_PREFIX}/certs:/var/www/onlyoffice/Data/certs
-     
-  onlyoffice-document-server:
-    container_name:  ${APP_CONTAINER_NAME}-document-server
-    image: onlyoffice/documentserver:6.0.2
-    stdin_open: true
-    tty: true
-    restart: always
-    environment:
-     - JWT_ENABLED=true
-     - JWT_SECRET=jwt_secret
-     - JWT_HEADER=AuthorizationJwt
-    ports:
-     - '9002:80'
-    expose:
-      - '80'
-      - '443'
-    volumes:
-       - ${VOLUMES_PATH_PREFIX}/document_data:/var/www/onlyoffice/Data
-       - ${VOLUMES_PATH_PREFIX}/document_log:/var/log/onlyoffice
-       - ${VOLUMES_PATH_PREFIX}/document_fonts:/usr/share/fonts/truetype/custom
-       - .document_forgotten:/var/lib/onlyoffice/documentserver/App_Data/cache/files/forgotten
-
-  onlyoffice-control-panel:
-    container_name:  ${APP_CONTAINER_NAME}-control-panel
-    depends_on:
-     - onlyoffice-document-server
-     - onlyoffice-community-server
-    image: onlyoffice/controlpanel:2.9.0.351
-    environment:
-     - ONLYOFFICE_CORE_MACHINEKEY=core_secret
-    expose:
-      - '80'
-      - '443'
-    restart: always
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ${VOLUMES_PATH_PREFIX}/controlpanel_data:/var/www/onlyoffice/Data
-      - ${VOLUMES_PATH_PREFIX}/controlpanel_log:/var/log/onlyoffice
-    stdin_open: true
-    tty: true
-    
-networks:
-  default:
-      name: ${APP_NETWORK}
-    
 volumes:
-  document_data:
-    driver: local
-  document_log:
-    driver: local
-  document_forgotten:
-  community_mysql:
-  community_data:
-  community_log:
-  community_letsencrypt:
-  controlpanel_data:
-  controlpanel_log:
-  mysql_data:
+  ckan_config:
+  ckan_home:
+  ckan_storage:
+  pg_data:
+  solr_data:
+
+services:
+  ckan:
+    container_name: ckan
+    build:
+      context: ../../
+      args:
+          - CKAN_SITE_URL=${CKAN_SITE_URL}
+    links:
+      - db
+      - solr
+      - redis
+    depends_on:
+      - db
+    ports:
+      - "0.0.0.0:${CKAN_PORT}:5000"
+    environment:
+      # Defaults work with linked containers, change to use own Postgres, SolR, Redis or Datapusher
+      - CKAN_SQLALCHEMY_URL=postgresql://ckan:${POSTGRES_PASSWORD}@db/ckan
+      - CKAN_DATASTORE_WRITE_URL=postgresql://ckan:${POSTGRES_PASSWORD}@db/datastore
+      - CKAN_DATASTORE_READ_URL=postgresql://datastore_ro:${DATASTORE_READONLY_PASSWORD}@db/datastore
+      - CKAN_SOLR_URL=http://solr:8983/solr/ckan
+      - CKAN_REDIS_URL=redis://redis:6379/1
+      - CKAN_DATAPUSHER_URL=http://datapusher:8800
+      - CKAN_SITE_URL=${CKAN_SITE_URL}
+      - CKAN_MAX_UPLOAD_SIZE_MB=${CKAN_MAX_UPLOAD_SIZE_MB}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - DS_RO_PASS=${DATASTORE_READONLY_PASSWORD}
+
+    volumes:
+      - ckan_config:/etc/ckan
+      - ckan_home:/usr/lib/ckan
+      - ckan_storage:/var/lib/ckan
+
+  datapusher:
+    container_name: datapusher
+    image: clementmouchet/datapusher
+    ports:
+      - "8800:8800"
+
+  db:
+    container_name: db
+    build:
+      context: ../../
+      dockerfile: contrib/docker/postgresql/Dockerfile
+      args:
+        - DS_RO_PASS=${DATASTORE_READONLY_PASSWORD}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    environment:
+      - DS_RO_PASS=${DATASTORE_READONLY_PASSWORD}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - PGDATA=/var/lib/postgresql/data/db
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "ckan"]
+
+  solr:
+    container_name: solr
+    build:
+      context: ../../
+      dockerfile: contrib/docker/solr/Dockerfile
+    volumes:
+      - solr_data:/opt/solr/server/solr/ckan/data
+
+
+  redis:
+    container_name: redis
+    image: redis:latest
