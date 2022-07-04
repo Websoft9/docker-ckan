@@ -79,3 +79,8 @@ services:
   redis:
     container_name: redis
     image: redis:latest
+    
+networks:
+  default:
+    name: ${APP_NETWORK}
+    external: true
